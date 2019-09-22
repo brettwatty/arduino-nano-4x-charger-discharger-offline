@@ -1,13 +1,13 @@
-// ASDC Nano 4x Arduino Charger / Discharger
+// ASDC Nano 4x Arduino Charger / Discharger - Offline
 // ---------------------------------------------------------------------------
-// Created by Brett Watt on 19/03/2019
+// Created by Brett Watt on 23/09/2019
 // Copyright 2018 - Under creative commons license 3.0:
 //
 // This software is furnished "as is", without technical support, and with no
 // warranty, express or implied, as to its usefulness for any purpose.
 //
 // @brief
-// ASDC Nano 4x Arduino Charger / Discharger
+// ASDC Nano 4x Arduino Charger / Discharger - Offline
 // Main code for the Arduino Nano 3.0 ATmega328P
 // Version 1.0.0
 //
@@ -22,14 +22,12 @@
 #include <OneWire.h>
 #include <LiquidCrystal_I2C.h>
 #include <DallasTemperature.h>
-#include <SoftwareSerial.h>
 #include "Temp_Sensor_Serials.h"
 
 //Objects
 LiquidCrystal_I2C lcd(0x27, 16, 2);  // set the LCD address to 0x27 for a 16 chars and 2 line display
 OneWire oneWire(ONE_WIRE_BUS);		 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 DallasTemperature sensors(&oneWire); // Pass our oneWire reference to Dallas Temperature.
-SoftwareSerial ESP8266(3, 2);		 // RX , TX
 
 // Latch pin (ST_CP) of 74HC595
 const byte latchPin = 7;
@@ -74,8 +72,8 @@ typedef struct
 
 	// Module Cycle
 	byte cycleCount;
-	bool batteryBarcode;
-	bool insertData;
+	// bool batteryBarcode;
+	// bool insertData;
 	byte cycleState;
 	byte batteryFaultCode;
 
@@ -120,12 +118,12 @@ typedef struct
 	const float referenceVoltage = 5.02;							// 5V Output of Arduino
 	const float defaultBatteryCutOffVoltage = 2.8;					// Voltage that the discharge stops
 	const byte restTimeMinutes = 1;									// The time in Minutes to rest the battery after charge. 0-59 are valid
-	const int lowMilliamps = 1000;									//  This is the value of Milli Amps that is considered low and does not get recharged because it is considered faulty
-	const int highMilliOhms = 500;									//  This is the value of Milli Ohms that is considered high and the battery is considered faulty
+	const int lowMilliamps = 1000;									// This is the value of Milli Amps that is considered low and does not get recharged because it is considered faulty
+	const int highMilliOhms = 500;									// This is the value of Milli Ohms that is considered high and the battery is considered faulty
 	const int offsetMilliOhms = 0;									// Offset calibration for MilliOhms
 	const byte chargingTimeout = 8;									// The timeout in Hours for charging
 	const byte tempThreshold = 7;									// Warning Threshold in degrees above initial Temperature
-	const byte tempMaxThreshold = 20;								//Maximum Threshold in degrees above initial Temperature - Considered Faulty
+	const byte tempMaxThreshold = 20;								// Maximum Threshold in degrees above initial Temperature - Considered Faulty
 	const float batteryVolatgeLeak = 0.50;							// On the initial screen "BATTERY CHECK" observe the highest voltage of each module and set this value slightly higher
 	const byte moduleCount = 4;										// Number of Modules
 	const byte screenTime = 4;										// Time in Seconds (Cycles) per Active Screen
@@ -137,9 +135,6 @@ CustomSettings settings;
 
 byte ambientTemperature = 0;
 boolean buttonPressed = false;
-boolean readSerialResponse = false;
-char serialSendString[400];
-byte countSerialSend = 0;
 boolean soundBuzzer = false;
 
 void setup()
@@ -176,10 +171,6 @@ void setup()
 	Serial.begin(115200);
 	Serial.setTimeout(5);
 
-	//Initialize Software Serial for communication with the ESP8266
-	ESP8266.begin(57600);
-	ESP8266.setTimeout(5);
-
 	//Startup Screen
 	lcd.init();
 	lcd.clear();
@@ -212,9 +203,6 @@ void setup()
 
 void loop()
 {
-	if (readSerialResponse == true)
-		readSerial();
-
 	// Mills - Timmer
 	static long buttonMillis;
 	static long cycleStateValuesMillis;
@@ -237,20 +225,6 @@ void loop()
 	{
 		cycleStateValues();
 		cycleStateValuesMillis = currentMillis;
-	}
-	currentMillis = millis();
-	if (currentMillis - sendSerialMillis >= 4000) // Every 4 seconds
-	{
-		if (readSerialResponse == false || countSerialSend > 5)
-		{
-			sendSerial();
-			countSerialSend = 0;
-		}
-		else
-		{
-			countSerialSend++;
-		}
-		sendSerialMillis = currentMillis;
 	}
 }
 
@@ -283,60 +257,6 @@ void fanController()
 	else
 	{
 		digitalWrite(FAN, HIGH);
-	}
-}
-
-void sendSerial()
-{
-	if (strcmp(serialSendString, "") != 0)
-	{
-		ESP8266.println(serialSendString);
-		Serial.println(serialSendString);
-		strcpy(serialSendString, "");
-		readSerialResponse = true;
-	}
-}
-
-void readSerial()
-{
-	while (ESP8266.available())
-	{
-		String returnString = "";
-		String recievedMessage = "";
-		int returnInt;
-		recievedMessage = ESP8266.readString(); // Read the incoming data as string
-		Serial.println(recievedMessage);
-		recievedMessage.trim();
-		if (recievedMessage.length() > 1) // Multiple CHAR
-		{
-			for (byte i = 0; i <= recievedMessage.length(); i++)
-			{
-				if (recievedMessage.charAt(i) == ':' || recievedMessage.length() == i)
-				{
-					returnInt = returnString.toInt();
-					if (returnInt != 0)
-					{
-						returnCodes(returnInt);
-					}
-					else
-					{
-						returnCodes(9); // ERROR_SERIAL_OUTPUT
-					}
-					returnString = "";
-				}
-				else
-				{
-					returnString += recievedMessage.charAt(i);
-				}
-			}
-		}
-		else
-		{ // Single CHAR
-			returnInt = recievedMessage.toInt();
-			returnCodes(returnInt);
-		}
-		countSerialSend = 0;
-		readSerialResponse = false;
 	}
 }
 
@@ -418,8 +338,6 @@ void clearSecondsTimer(byte j)
 void initializeVariables(byte j)
 {
 	// Initialization
-	module[j].batteryBarcode = false;
-	module[j].insertData = false;
 	module[j].tempMilliOhmsValue = 0;
 	module[j].milliOhmsValue = 0;
 	module[j].intMilliSecondsCount = 0;
@@ -429,7 +347,6 @@ void initializeVariables(byte j)
 	module[j].dischargeMilliamps = 0.0;
 	module[j].dischargeVoltage = 0.00;
 	module[j].dischargeAmps = 0.00;
-	// module[j].dischargeCompleted = false;
 	module[j].batteryFaultCode = 0;
 	module[j].batteryInitialTemp = 0;
 	module[j].batteryCurrentTemp = 0;
@@ -438,9 +355,7 @@ void initializeVariables(byte j)
 
 void cycleStateValues()
 {
-	strcpy(serialSendString, "");
 	getAmbientTemperature();
-	sprintf_P(serialSendString + strlen(serialSendString), PSTR("&AT=%d"), ambientTemperature);
 	for (byte i = 0; i < settings.moduleCount; i++)
 	{
 		switch (module[i].cycleState)
@@ -457,46 +372,21 @@ void cycleStateValues()
 				clearSecondsTimer(i);
 				module[i].batteryVoltage = readMux(module[i].batteryVolatgePin); // Get battery voltage for Charge Cycle
 				module[i].batteryInitialVoltage = module[i].batteryVoltage;
-				module[i].cycleState = 1; // Check Battery Voltage Completed set cycleState to Get Battery Barcode
+				module[i].cycleState = 2; // Check Battery Voltage Completed set cycleState to Get Battery Barcode
 				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 			}
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=0"), i);
-			break;
-		case 1:																 // Battery Barcode
-			module[i].batteryVoltage = readMux(module[i].batteryVolatgePin); // Get battery voltage
-			if (module[i].batteryBarcode == true)
-			{
-				clearSecondsTimer(i);
-				module[i].batteryInitialVoltage = module[i].batteryVoltage; // Reset Initial voltage
-				module[i].cycleState = 2;									// Get Battery Barcode Completed set cycleState to Charge Battery
-			}
-			//Check if battery has been removed
-			if (!batteryCheck(i))
-				module[i].cycleCount++;
-			if (module[i].cycleCount == 5)
-			{
-				module[i].cycleState = 0; // Completed and Battery Removed set cycleState to Check Battery Voltage
-				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-			}
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=1"), i);
 			break;
 		case 2: // Charge Battery
 			//Serial.println(readMux(module[i].chargeLedPin));
 			module[i].batteryVoltage = readMux(module[i].batteryVolatgePin); // Get battery voltage
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=2&TI%d=%d&IT%d=%d&IV%d=%d.%02d&CT%d=%d&CV%d=%d.%02d&HT%d=%d"), i, i, (module[i].seconds + (module[i].minutes * 60) + (module[i].hours * 3600)), i, module[i].batteryInitialTemp, i, (int)module[i].batteryInitialVoltage, (int)(module[i].batteryInitialVoltage * 100) % 100, i, module[i].batteryCurrentTemp, i, (int)module[i].batteryVoltage, (int)(module[i].batteryVoltage * 100) % 100, i, module[i].batteryHighestTemp);
 			if (processTemperature(i) == 2)
 			{
 				//Battery Temperature is >= MAX Threshold considered faulty
 				digitalSwitch(module[i].chargeMosfetPin, 0); // Turn off TP5100
 				module[i].batteryFaultCode = 7;				 // Set the Battery Fault Code to 7 High Temperature
-				if (module[i].insertData == true)
-				{
-					clearSecondsTimer(i);
-					module[i].insertData = false;
-					module[i].cycleState = 7; // Temperature is to high. Battery is considered faulty set cycleState to Completed
-					module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-				}
-				sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+				clearSecondsTimer(i);
+				module[i].cycleState = 7; // Temperature is to high. Battery is considered faulty set cycleState to Completed
+				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 			}
 			else
 			{
@@ -505,28 +395,18 @@ void cycleStateValues()
 				if (module[i].cycleCount >= 10)
 				{
 					digitalSwitch(module[i].chargeMosfetPin, 0); // Turn off TP5100
-					if (module[i].insertData == true)
-					{
-						// clearSecondsTimer(i);
-						module[i].insertData = false;
-						module[i].cycleState = 3; // Charge Battery Completed set cycleState to Check Battery Milli Ohms
-						module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-					}
-					sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+					// clearSecondsTimer(i);
+					module[i].cycleState = 3; // Charge Battery Completed set cycleState to Check Battery Milli Ohms
+					module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 				}
 			}
 			if (module[i].hours == settings.chargingTimeout) // Charging has reached Timeout period. Either battery will not hold charge, has high capacity or the TP5100 is faulty
 			{
 				digitalSwitch(module[i].chargeMosfetPin, 0); // Turn off TP5100
 				module[i].batteryFaultCode = 9;				 // Set the Battery Fault Code to 7 Charging Timeout
-				if (module[i].insertData == true)
-				{
-					clearSecondsTimer(i);
-					module[i].insertData = false;
-					module[i].cycleState = 7; // Charging Timeout. Battery is considered faulty set cycleState to Completed
-					module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-				}
-				sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+				clearSecondsTimer(i);
+				module[i].cycleState = 7; // Charging Timeout. Battery is considered faulty set cycleState to Completed
+				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 			}
 			break;
 		case 3: // Check Battery Milli Ohms
@@ -556,7 +436,6 @@ void cycleStateValues()
 				}
 				clearSecondsTimer(i);
 			}
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=3&MO%d=%d&CV%d=%d.%02d"), i, i, (int)module[i].milliOhmsValue, i, (int)module[i].batteryVoltage, (int)(module[i].batteryVoltage * 100) % 100);
 			break;
 
 		case 4:																 // Rest Battery
@@ -568,23 +447,16 @@ void cycleStateValues()
 				clearSecondsTimer(i);
 				module[i].cycleState = 5; // Rest Battery Completed set cycleState to Discharge Battery
 			}
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=4&TI%d=%d&CT%d=%d&CV%d=%d.%02d"), i, i, (module[i].seconds + (module[i].minutes * 60) + (module[i].hours * 3600)), i, module[i].batteryCurrentTemp, i, (int)module[i].batteryVoltage, (int)(module[i].batteryVoltage * 100) % 100);
 			break;
 		case 5: // Discharge Battery
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=5&TI%d=%d&IT%d=%d&IV%d=%d.%02d&CT%d=%d&CV%d=%d.%02d&HT%d=%d&MA%d=%d&DA%d=%d.%02d&MO%d=%d"), i, i, (module[i].seconds + (module[i].minutes * 60) + (module[i].hours * 3600)), i, module[i].batteryInitialTemp, i, (int)module[i].batteryInitialVoltage, (int)(module[i].batteryInitialVoltage * 100) % 100, i, module[i].batteryCurrentTemp, i, (int)module[i].dischargeVoltage, (int)(module[i].dischargeVoltage * 100) % 100, i, module[i].batteryHighestTemp, i, (int)module[i].dischargeMilliamps, i, (int)module[i].dischargeAmps, (int)(module[i].dischargeAmps * 100) % 100, i, (int)module[i].milliOhmsValue);
 			if (processTemperature(i) == 2)
 			{
 				//Battery Temperature is >= MAX Threshold considered faulty
 				digitalSwitch(module[i].dischargeMosfetPin, 0); // Turn off Discharge Mosfet
 				module[i].batteryFaultCode = 7;					// Set the Battery Fault Code to 7 High Temperature
-				if (module[i].insertData == true)
-				{
-					clearSecondsTimer(i);
-					module[i].insertData = false;
-					module[i].cycleState = 7; // Temperature is high. Battery is considered faulty set cycleState to Completed
-					module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-				}
-				sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+				clearSecondsTimer(i);
+				module[i].cycleState = 7; // Temperature is high. Battery is considered faulty set cycleState to Completed
+				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 			}
 			else
 			{
@@ -596,47 +468,31 @@ void cycleStateValues()
 					if (module[i].dischargeMilliamps < settings.lowMilliamps) // No need to recharge the battery if it has low Milliamps
 					{
 						module[i].batteryFaultCode = 5; // Set the Battery Fault Code to 5 Low Milliamps
-						if (module[i].insertData == true)
-						{
-							clearSecondsTimer(i);
-							module[i].insertData = false;
-							module[i].cycleState = 7; // Discharge Battery Completed set cycleState to Completed
-							module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-						}
-						sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+						clearSecondsTimer(i);
+						module[i].cycleState = 7; // Discharge Battery Completed set cycleState to Completed
+						module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 					}
 					else
 					{
-						if (module[i].insertData == true)
-						{
-							module[i].batteryVoltage = readMux(module[i].batteryVolatgePin); // Get battery voltage for Recharge Cycle
-							module[i].batteryInitialVoltage = module[i].batteryVoltage;		 // Reset Initial voltage
-							clearSecondsTimer(i);
-							module[i].insertData = false;
-							module[i].cycleState = 6; // Discharge Battery Completed set cycleState to Recharge Battery
-							module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-						}
-						sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+						module[i].batteryVoltage = readMux(module[i].batteryVolatgePin); // Get battery voltage for Recharge Cycle
+						module[i].batteryInitialVoltage = module[i].batteryVoltage;		 // Reset Initial voltage
+						clearSecondsTimer(i);
+						module[i].cycleState = 6; // Discharge Battery Completed set cycleState to Recharge Battery
+						module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 					}
 				}
 			}
 			break;
 		case 6:																 // Recharge Battery
 			module[i].batteryVoltage = readMux(module[i].batteryVolatgePin); // Get battery voltage
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=6&TI%d=%d&IT%d=%d&IV%d=%d.%02d&CT%d=%d&CV%d=%d.%02d&HT%d=%d"), i, i, (module[i].seconds + (module[i].minutes * 60) + (module[i].hours * 3600)), i, module[i].batteryInitialTemp, i, (int)module[i].batteryInitialVoltage, (int)(module[i].batteryInitialVoltage * 100) % 100, i, module[i].batteryCurrentTemp, i, (int)module[i].batteryVoltage, (int)(module[i].batteryVoltage * 100) % 100, i, module[i].batteryHighestTemp);
 			if (processTemperature(i) == 2)
 			{
 				//Battery Temperature is >= MAX Threshold considered faulty
 				digitalSwitch(module[i].chargeMosfetPin, 0); // Turn off TP5100
 				module[i].batteryFaultCode = 7;				 // Set the Battery Fault Code to 7 High Temperature
-				if (module[i].insertData == true)
-				{
-					clearSecondsTimer(i);
-					module[i].insertData = false;
-					module[i].cycleState = 7; // Temperature is to high. Battery is considered faulty set cycleState to Completed
-					module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-				}
-				sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+				clearSecondsTimer(i);
+				module[i].cycleState = 7; // Temperature is to high. Battery is considered faulty set cycleState to Completed
+				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 			}
 			else
 			{
@@ -653,28 +509,18 @@ void cycleStateValues()
 				if (module[i].cycleCount >= 10)
 				{
 					digitalSwitch(module[i].chargeMosfetPin, 0); // Turn off TP5100
-					if (module[i].insertData == true)
-					{
-						clearSecondsTimer(i);
-						module[i].insertData = false;
-						module[i].cycleState = 7; // Recharge Battery Completed set cycleState to Completed
-						module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-					}
-					sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+					clearSecondsTimer(i);
+					module[i].cycleState = 7; // Recharge Battery Completed set cycleState to Completed
+					module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 				}
 			}
 			if (module[i].hours == settings.chargingTimeout) // Charging has reached Timeout period. Either battery will not hold charge, has high capacity or the TP5100 is faulty
 			{
 				digitalSwitch(module[i].chargeMosfetPin, 0); // Turn off TP5100
 				module[i].batteryFaultCode = 9;				 // Set the Battery Fault Code to 7 Charging Timeout
-				if (module[i].insertData == true)
-				{
-					clearSecondsTimer(i);
-					module[i].insertData = false;
-					module[i].cycleState = 7; // Charging Timeout. Battery is considered faulty set cycleState to Completed
-					module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
-				}
-				sprintf_P(serialSendString + strlen(serialSendString), PSTR("&ID%d"), i);
+				clearSecondsTimer(i);
+				module[i].cycleState = 7; // Charging Timeout. Battery is considered faulty set cycleState to Completed
+				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 			}
 			break;
 		case 7: // Completed
@@ -685,7 +531,6 @@ void cycleStateValues()
 				module[i].cycleState = 0; // Completed and Battery Removed set cycleState to Check Battery Voltage
 				module[i].cycleCount = 0; // Reset cycleCount for use in other Cycles
 			}
-			sprintf_P(serialSendString + strlen(serialSendString), PSTR("&CS%d=7&CV%d=%d.%02d&FC%d=%d"), i, i, (int)module[i].batteryVoltage, (int)(module[i].batteryVoltage * 100) % 100, i, module[i].batteryFaultCode);
 			break;
 		}
 		secondsTimer(i);
@@ -934,76 +779,4 @@ float readMux(bool inputArray[])
 	}
 	batterySampleVoltage = batterySampleVoltage / 10;
 	return batterySampleVoltage * settings.referenceVoltage / 1023.0; // Calculate and return the Voltage Reading
-}
-
-void returnCodes(int codeID)
-{
-	switch (codeID)
-	{
-	case 0: // SUCCESSFUL
-		Serial.println(F("SUCCESSFUL"));
-		break;
-	case 1: // CONNECTION ERROR
-		Serial.println(F("CONNECTION_ERROR"));
-		break;
-	case 2: // TIMEOUT
-		Serial.println(F("TIMEOUT"));
-		break;
-	case 3: // ERROR_DATABASE
-		Serial.println(F("ERROR_DATABASE"));
-		break;
-	case 4: // ERROR_MISSING_DATA
-		Serial.println(F("ERROR_MISSING_DATA"));
-		break;
-	case 5: // ERROR_NO_BARCODE_DB
-		Serial.println(F("ERROR_NO_BARCODE_DB"));
-		break;
-	case 6: // ERROR_NO_BARCODE_INPUT
-		Serial.println(F("ERROR_NO_BARCODE_INPUT"));
-		break;
-	case 7: // ERROR_DATABASE_HASH_INPUT
-		Serial.println(F("ERROR_DATABASE_HASH_INPUT"));
-		break;
-	case 8: // ERROR_HASH_INPUT
-		Serial.println(F("ERROR_HASH_INPUT"));
-		break;
-	case 9: // ERROR_SERIAL_OUTPUT
-		Serial.println(F("ERROR_SERIAL_OUTPUT"));
-		break;
-	case 100: // BARCODE_CONTINUE_0
-		module[0].batteryBarcode = true;
-		Serial.println(F("BARCODE_CONTINUE_0"));
-		break;
-	case 101: // BARCODE_CONTINUE_1
-		module[1].batteryBarcode = true;
-		Serial.println(F("BARCODE_CONTINUE_1"));
-		break;
-	case 102: // BARCODE_CONTINUE_2
-		module[2].batteryBarcode = true;
-		Serial.println(F("BARCODE_CONTINUE_2"));
-		break;
-	case 103: // BARCODE_CONTINUE_3
-		module[3].batteryBarcode = true;
-		Serial.println(F("BARCODE_CONTINUE_3"));
-		break;
-	case 200: // INSERT_DATA_SUCCESSFUL_0
-		module[0].insertData = true;
-		Serial.println(F("INSERT_DATA_SUCCESSFUL_0"));
-		break;
-	case 201: // INSERT_DATA_SUCCESSFUL_1
-		module[1].insertData = true;
-		Serial.println(F("INSERT_DATA_SUCCESSFUL_1"));
-		break;
-	case 202: // INSERT_DATA_SUCCESSFUL_2
-		module[2].insertData = true;
-		Serial.println(F("INSERT_DATA_SUCCESSFUL_2"));
-		break;
-	case 203: // INSERT_DATA_SUCCESSFUL_3
-		module[3].insertData = true;
-		Serial.println(F("INSERT_DATA_SUCCESSFUL_3"));
-		break;
-	default:
-		Serial.println(F("UKNOWN"));
-		break;
-	}
 }
